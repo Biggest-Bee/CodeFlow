@@ -1,0 +1,19 @@
+@tailwind base;
+@tailwind components;
+@tailwind utilities;
+
+:root {
+  color-scheme: dark;
+}
+
+body {
+  @apply bg-gray-950 text-gray-100 font-sans;
+}
+
+.panel {
+  @apply bg-gray-900/80 border border-gray-800 rounded-xl;
+}
+
+.icon-btn {
+  @apply h-10 w-10 rounded-lg bg-gray-900 hover:bg-brand/20 border border-gray-800 text-gray-200 transition;
+}
