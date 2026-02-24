@@ -26,16 +26,3 @@ CodeFlow IDE v1 is a high-fidelity Next.js web IDE prototype that implements a p
 npm install
 npm run dev
 ```
-
-## Direct link
-- Local app URL: `http://localhost:3000`
-- Direct file path in this environment: `/workspace/CodeFlow`
-- GitHub link for this working copy: **not available right now** (no `origin` remote is configured in this environment).
-- To create your direct GitHub link, run:
-
-```bash
-git remote add origin https://github.com/<your-user>/<your-repo>.git
-git push -u origin work
-```
-
-Then open: `https://github.com/<your-user>/<your-repo>/tree/work`
