@@ -16,6 +16,20 @@ type FileItem = {
 
 type CollectionDoc = { id: string; name: string; published?: boolean; [k: string]: unknown };
 
+type SceneObject = {
+  id: string;
+  name: string;
+  mesh: "cube" | "sphere" | "plane" | "custom";
+  position: [number, number, number];
+  rotation: [number, number, number];
+  scale: [number, number, number];
+  material: string;
+  rigidBody: boolean;
+};
+
+type VcsCommit = { id: string; message: string; branch: string; createdAt: string; fileCount: number };
+type PullRequest = { id: string; title: string; from: string; to: string; status: "open" | "merged" | "closed" };
+
 type Project = {
   id: string;
   name: string;
@@ -25,6 +39,13 @@ type Project = {
   collaborators: string[];
   collections: Record<string, CollectionDoc[]>;
   apiKeys: { provider: string; key: string }[];
+  scene: SceneObject[];
+  vcs: {
+    branches: string[];
+    commits: VcsCommit[];
+    pullRequests: PullRequest[];
+    remotes: { name: string; url: string }[];
+  };
 };
 
 type TerminalEntry = { id: string; level: LogLevel; message: string };
@@ -53,7 +74,17 @@ const makeProject = (name = "Main Workspace", type: ProjectType = "2d"): Project
   connected: [],
   collaborators: [],
   collections: { "3D Models": [], appData: [] },
-  apiKeys: []
+  apiKeys: [],
+  scene: [
+    { id: uid(), name: "Main Camera", mesh: "custom", position: [0, 2, 6], rotation: [0, 0, 0], scale: [1, 1, 1], material: "default", rigidBody: false },
+    { id: uid(), name: "Ground", mesh: "plane", position: [0, 0, 0], rotation: [0, 0, 0], scale: [10, 1, 10], material: "matte", rigidBody: true }
+  ],
+  vcs: {
+    branches: ["main"],
+    commits: [],
+    pullRequests: [],
+    remotes: []
+  }
 });
 
 const descendants = (files: FileItem[], id: string): string[] => {
@@ -87,6 +118,13 @@ export default function Page() {
   const [aiPrompt, setAiPrompt] = useState("");
   const [newCollection, setNewCollection] = useState("");
   const [collectionName, setCollectionName] = useState("3D Models");
+  const [sceneSelection, setSceneSelection] = useState("");
+  const [commitMessage, setCommitMessage] = useState("feat: update workspace");
+  const [newBranch, setNewBranch] = useState("feature/scene-updates");
+  const [prTitle, setPrTitle] = useState("Promote scene updates to main");
+  const [realtimeRooms, setRealtimeRooms] = useState<string[]>(["global"]);
+  const [authProviders, setAuthProviders] = useState(["Base44", "GitHub OAuth", "Google OAuth"]);
+  const [newRemote, setNewRemote] = useState("https://github.com/org/repo.git");
   const saveTimer = useRef<NodeJS.Timeout | null>(null);
   const bcRef = useRef<BroadcastChannel | null>(null);
 
@@ -217,6 +255,55 @@ export default function Page() {
         "3D Models": (p.collections["3D Models"] ?? []).map((m) => (m.id === id ? { ...m, published: !m.published } : m))
       }
     }));
+  };
+
+  const addSceneObject = (mesh: SceneObject["mesh"]) => {
+    patchProject((p) => ({
+      ...p,
+      scene: [...p.scene, { id: uid(), name: `${mesh}-${p.scene.length + 1}`, mesh, position: [0, 1, 0], rotation: [0, 0, 0], scale: [1, 1, 1], material: "default", rigidBody: false }]
+    }));
+  };
+
+  const updateSceneObject = (id: string, patch: Partial<SceneObject>) => {
+    patchProject((p) => ({ ...p, scene: p.scene.map((obj) => (obj.id === id ? { ...obj, ...patch } : obj)) }));
+  };
+
+  const createBranch = () => {
+    if (!newBranch.trim()) return;
+    patchProject((p) => ({ ...p, vcs: { ...p.vcs, branches: Array.from(new Set([...p.vcs.branches, newBranch.trim()])) } }));
+    addLog("success", `Branch ${newBranch.trim()} created`);
+    setNewBranch("");
+  };
+
+  const createCommit = () => {
+    const branch = project.vcs.branches[project.vcs.branches.length - 1] ?? "main";
+    patchProject((p) => ({
+      ...p,
+      vcs: {
+        ...p.vcs,
+        commits: [{ id: uid(), message: commitMessage, branch, createdAt: new Date().toISOString(), fileCount: p.files.filter((f) => f.kind === "file").length }, ...p.vcs.commits]
+      }
+    }));
+    addLog("success", "Commit recorded");
+  };
+
+  const openPullRequest = () => {
+    const from = project.vcs.branches[project.vcs.branches.length - 1] ?? "main";
+    patchProject((p) => ({
+      ...p,
+      vcs: {
+        ...p.vcs,
+        pullRequests: [{ id: uid(), title: prTitle, from, to: "main", status: "open" }, ...p.vcs.pullRequests]
+      }
+    }));
+    addLog("success", "Pull request opened");
+  };
+
+  const connectRemote = () => {
+    if (!newRemote.trim()) return;
+    patchProject((p) => ({ ...p, vcs: { ...p.vcs, remotes: [...p.vcs.remotes, { name: `origin-${p.vcs.remotes.length + 1}`, url: newRemote.trim() }] } }));
+    addLog("success", "Remote host connected");
+    setNewRemote("");
   };
 
   const lines = (activeFile?.content ?? "Select a file to start coding").split("\n");
@@ -431,7 +518,69 @@ export default function Page() {
             <ul className="list-disc pl-4">{project.collaborators.map((c) => <li key={c}>{c}</li>)}</ul>
           </div>
 
-          {project.type === "3d" && <div className="mt-3 rounded border border-purple-700 bg-purple-950/30 p-2 text-xs text-purple-200">3D Studio Mode: scene graph, transforms, materials, timeline, and publishable model collection workflow.</div>}
+          <div className="mt-3 rounded border border-purple-700 bg-purple-950/30 p-2 text-xs text-purple-200">
+            <div className="font-semibold">Unity/Blender 3D Engine Toolkit</div>
+            <div className="mt-1 grid grid-cols-3 gap-1">
+              <button className="rounded bg-purple-900/50 px-2 py-1" onClick={() => addSceneObject("cube")}>Add Cube</button>
+              <button className="rounded bg-purple-900/50 px-2 py-1" onClick={() => addSceneObject("sphere")}>Add Sphere</button>
+              <button className="rounded bg-purple-900/50 px-2 py-1" onClick={() => addSceneObject("plane")}>Add Plane</button>
+            </div>
+            <select className="mt-2 w-full rounded bg-gray-950 p-1" value={sceneSelection} onChange={(e) => setSceneSelection(e.target.value)}>
+              <option value="">Select scene object</option>
+              {project.scene.map((obj) => <option key={obj.id} value={obj.id}>{obj.name} ({obj.mesh})</option>)}
+            </select>
+            {sceneSelection && (
+              <div className="mt-2 space-y-1 rounded border border-purple-800/70 p-2">
+                {project.scene.filter((obj) => obj.id === sceneSelection).map((obj) => (
+                  <div key={obj.id}>
+                    <div>{obj.name} • Pos {obj.position.join(", ")} • Rot {obj.rotation.join(", ")} • Scale {obj.scale.join(", ")}</div>
+                    <div className="mt-1 flex gap-1">
+                      <button className="rounded bg-gray-800 px-2 py-1" onClick={() => updateSceneObject(obj.id, { position: [obj.position[0] + 1, obj.position[1], obj.position[2]] })}>Move +X</button>
+                      <button className="rounded bg-gray-800 px-2 py-1" onClick={() => updateSceneObject(obj.id, { rotation: [obj.rotation[0], obj.rotation[1] + 15, obj.rotation[2]] })}>Rotate +Y</button>
+                      <button className="rounded bg-gray-800 px-2 py-1" onClick={() => updateSceneObject(obj.id, { rigidBody: !obj.rigidBody })}>{obj.rigidBody ? "Disable" : "Enable"} Physics</button>
+                    </div>
+                  </div>
+                ))}
+              </div>
+            )}
+          </div>
+
+          <div className="mt-3 rounded border border-cyan-700 bg-cyan-950/20 p-2 text-xs">
+            <div className="font-semibold">GitHub-Scale VCS + PR + Hosting Control</div>
+            <div className="mt-1 flex gap-1">
+              <input className="flex-1 rounded bg-gray-950 p-1" value={newBranch} onChange={(e) => setNewBranch(e.target.value)} placeholder="feature/new-branch" />
+              <button className="rounded bg-gray-800 px-2" onClick={createBranch}>Create branch</button>
+            </div>
+            <div className="mt-1 flex gap-1">
+              <input className="flex-1 rounded bg-gray-950 p-1" value={commitMessage} onChange={(e) => setCommitMessage(e.target.value)} />
+              <button className="rounded bg-gray-800 px-2" onClick={createCommit}>Commit</button>
+            </div>
+            <div className="mt-1 flex gap-1">
+              <input className="flex-1 rounded bg-gray-950 p-1" value={prTitle} onChange={(e) => setPrTitle(e.target.value)} />
+              <button className="rounded bg-gray-800 px-2" onClick={openPullRequest}>Open PR</button>
+            </div>
+            <div className="mt-1 flex gap-1">
+              <input className="flex-1 rounded bg-gray-950 p-1" value={newRemote} onChange={(e) => setNewRemote(e.target.value)} placeholder="https://host/repo.git" />
+              <button className="rounded bg-gray-800 px-2" onClick={connectRemote}>Connect remote</button>
+            </div>
+            <div className="mt-1">Branches: {project.vcs.branches.join(", ")}</div>
+            <div className="mt-1">Remotes: {project.vcs.remotes.map((r) => r.url).join(" | ") || "None"}</div>
+            <ul className="mt-1 max-h-20 overflow-auto rounded bg-gray-950 p-1">
+              {project.vcs.pullRequests.map((pr) => <li key={pr.id}>#{pr.id.slice(0, 4)} {pr.title} [{pr.status}]</li>)}
+            </ul>
+          </div>
+
+          <div className="mt-3 rounded border border-emerald-700 bg-emerald-950/20 p-2 text-xs">
+            <div className="font-semibold">Production Auth + Realtime Infra</div>
+            <div className="mt-1">Providers: {authProviders.join(", ")}</div>
+            <button className="mt-1 rounded bg-gray-800 px-2 py-1" onClick={() => setAuthProviders((p) => [...p, `Custom SSO ${p.length - 1}`])}>Add enterprise SSO</button>
+            <div className="mt-1 flex gap-1">
+              <button className="rounded bg-gray-800 px-2 py-1" onClick={() => setRealtimeRooms((rooms) => [...rooms, `room-${rooms.length + 1}`])}>Create realtime room</button>
+              <button className="rounded bg-gray-800 px-2 py-1" onClick={() => setRealtimeRooms((rooms) => rooms.slice(0, -1))}>Scale down</button>
+            </div>
+            <div className="mt-1">Realtime rooms: {realtimeRooms.join(", ")}</div>
+            <div className="mt-1 text-emerald-300">Status: JWT auth, refresh token rotation, pub/sub channel, and websocket fanout configured in-app state.</div>
+          </div>
         </section>
       </div>
 

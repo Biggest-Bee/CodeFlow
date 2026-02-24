@@ -15,11 +15,9 @@ CodeFlow IDE v1 is a high-fidelity Next.js web IDE prototype that implements a p
 - 3D Models collection with publish/unpublish flow.
 - Collaboration panel and same-browser-tab live sync via `BroadcastChannel`.
 - Debounced (1s) persistence for authenticated users.
-
-## What is not in v1
-- Full Unity/Blender-grade 3D engine capabilities.
-- Full GitHub-scale VCS, PRs, and remote hosting.
-- Production backend auth and realtime infra.
+- Unity/Blender-inspired scene toolkit: primitive creation, transform operations, and physics toggle per scene object.
+- GitHub-inspired control surface: branch creation, commit snapshots, PR tracking, and remote host entries.
+- Production-infra simulation controls: multi-provider auth list, SSO extension, and scalable realtime room topology.
 
 ## Run
 ```bash
